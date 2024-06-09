@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/">
+        <file>test0.jpg</file>
+        <file>test1.jpg</file>
+        <file>test2.jpg</file>
+        <file>test3.jpg</file>
+        <file>test4.jpg</file>
+        <file>test5.jpg</file>
+        <file>test6.jpg</file>
+        <file>test7.jpg</file>
+        <file>Mainpage.qml</file>
+        <file>imgeList.jpg</file>
+        <file>logo.png</file>
+    </qresource>
+</RCC>
