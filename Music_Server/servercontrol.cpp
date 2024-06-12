@@ -143,5 +143,14 @@ void ServerControl::readMessage()
 
 void ServerControl::disConnection()
 {
-
+    QTcpSocket *socket=qobject_cast<QTcpSocket*>(sender());
+    qDebug()<<"socket disconnection";
+    this->tcplist.removeOne(socket);
+    this->widget->getlistwidget()->clear();
+    socket->deleteLater();
+    for(QTcpSocket *sock:tcplist)
+    {
+        QString ip=sock->peerAddress().toString();
+        this->widget->getlistwidget()->addItem(ip);
+    }
 }
