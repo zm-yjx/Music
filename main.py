@@ -1,266 +1,278 @@
-# import re
-# # 爬取数据与使用正则表达式
-# import requests
-# # 导入requests包来作为爬虫的基础
-# import time
-#
-# from lxml import html
-# # 使用sleep函数
-# from lxml import etree
-#
-# if __name__ == "__main__":
-# # 函数入口，防止程序从模块较大的程序运行
-#
-#         url1 = 'https://music.163.com/#/search/m/?s=原神'
-#         # file = open("C:\\Users\\33746\\Desktop\\data.txt","r",encoding='gb2312')
-#         # find = file.read()
-#         # file.close()
-#         # print("搜寻内容："+find)
-#         url2 = '&type=1'
-#         url = 'https://music.163.com/#/search/m/?s=%E5%8E%9F%E7%A5%9E&type=1'
-#         # 设置爬取数据网站的路由url
-#         print(url)
-#         header = {
-#             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
-#         }
-#         # User Agent，使得爬虫伪装成为正常的浏览器请求从而可以访问爬取内容
-#         requests.encoding = 'utf-8'
-#         response = requests.get(url=url,headers=header)
-#
-#         # html_content=response.content
-#         # tree = html.fromstring(html_content)
-#         # a_tags = tree.xpath('//a')
-#         # for a in a_tags:
-#         #     href = a.get('href')
-#         #     print(href)
-#         # 修改文件形式为utf-8的形式
-#         text = response.text
-#         print(text)
-#         # requests包get响应格式（响应路由，响应变量名字，UA伪装机制“即是将爬虫伪装成为一个正常的浏览器，需要在网页上获取相应浏览器信息”）
+"""
+NetEase Cloud Music scraper — searches for songs, downloads MP3s,
+and stores metadata in MySQL. Driven by IPC files from the Qt C++ client.
+"""
+import json
+import logging
+import re
+import signal
+import sys
+import time
+from pathlib import Path
 
-
-
-# import requests
-# import re
-#
-# url = 'https://music.163.com/discover/toplist'
-# # 伪装成浏览器
-# headers = {
-#     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
-# }
-#
-# # get请求
-# response = requests.get(url, headers=headers)
-# html_data = response.text
-#
-# info_list = re.findall('<a href="/song\?id=(.*?)">(.*?)</a>', html_data)
-#
-# for info in info_list:
-#     music_id = info[0]
-#     music_name = info[1]
-#     music_url = 'http://music.163.com/song/media/outer/url?id=' + music_id
-#     print(music_url)
-#
-#     chars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|']
-#     for char in chars:
-#         music_name = music_name.replace(char, '_')
-#         print(music_id)
-# print('http://music.163.com/song/media/outer/url?id=' + '2045806409')
-#     # 图片、音频、视频都属于二进制数据
-#     # music_data = requests.get(music_url, headers=headers).content
-#     # with open(f'C:/Users\Administrator\Desktop\音乐播放器/{music_name}.mp3', mode='wb') as f:
-#     #     f.write(music_data)
-
-
-
-# # 等待一段时间，确保页面中的JavaScript已经执行完毕
-# # 这里可以根据具体情况调整等待的时间
-# print("a")
-# driver.implicitly_wait(10)
-# print("b")
-# # 获取页面中的所有超链接
-# a_tags = driver.find_elements_by_tag_name('a')
-#
-# for a in a_tags:
-#     href = a.get_attribute('href')
-#     print(href)
-#
-# driver.quit()
-
-
-
-from time import sleep
+import pymysql
+import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from threading import Thread
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
-import json
-import re
-import requests
-import pymysql
+# ---------------------------------------------------------------------------
+# Configuration — adjust paths / credentials for your environment
+# ---------------------------------------------------------------------------
+CONFIG = {
+    "db": {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "database": "music_info",
+        "charset": "utf8",
+        "user": "root",
+        "passwd": "111111",
+    },
+    "paths": {
+        "find_file": Path("C:/Users/33746/Desktop/Find.txt"),
+        "wantfind_file": Path("C:/Users/33746/Desktop/WantFind.txt"),
+        "download_dir": Path("C:/Users/33746/Desktop/ServerFindMusic"),
+        "cookies_file": Path("cookies.txt"),
+    },
+    "urls": {
+        "home": "https://music.163.com",
+        "search": "https://music.163.com/#/search/m/?s=",
+        "media_outer": "http://music.163.com/song/media/outer/url?id=",
+    },
+    "headers": {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+        ),
+    },
+}
 
-def takeMusicname():
-    with open('C:\\Users\\33746\\Desktop\\Find.txt', 'r', encoding='gbk') as f:
-        userclicked = f.read()
-    items = userclicked.split("/")
-    print(items)  # Output: ['apple', 'orange', 'banana']
-    return items[1]
-#获取QT用户点击要听的歌曲
+logger = logging.getLogger("music_scraper")
 
-def loadMusicid(url):
-    findtext = url.find("=")
-    idtext = url[findtext + 1:]
-    print(idtext)
-    return idtext
-    # requests.get(url)
-#处理url字符串来获取指定歌曲的id
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _extract_song_id(url: str) -> str:
+    """Return the numeric song id from a URL like '...song?id=1234567'."""
+    return url.rsplit("=", 1)[-1]
 
-def loadMusictext(url):
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0'
-    }
-    songtexturl = url
-    songtext = requests.get(songtexturl).text
-    print(songtext)
-    sleep(1)
-#加载歌词文本
 
-def addSqlquery(sqlcontrol,value):
-    conn = pymysql.connect(
-        host="127.0.0.1",
-        port=3306,
-        database="music_info",
-        charset="utf8",
-        user="root",
-        passwd="111111"
+def _sanitise_filename(name: str) -> str:
+    """Strip characters that are illegal in Windows file names."""
+    return re.sub(r'[\\/*?:"<>|]', "_", name)
+
+
+# ---------------------------------------------------------------------------
+# Database
+# ---------------------------------------------------------------------------
+def _db_connection():
+    return pymysql.connect(**CONFIG["db"])
+
+
+def insert_find_record(music_id: str, song_name: str, username: str) -> None:
+    sql = "INSERT INTO find_list (findlist_name, findlist_musicid, user_name) VALUES (%s, %s, %s)"
+    with _db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (song_name, music_id, username))
+        conn.commit()
+
+
+def insert_musicinfo_record(music_id: str, song_name: str, path: str) -> None:
+    sql = "INSERT INTO musicinfo_list (findlist_musicid, music_name, music_path) VALUES (%s, %s, %s)"
+    with _db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (music_id, song_name, path))
+        conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# IPC  (communicates with the Qt C++ client via desktop text files)
+# ---------------------------------------------------------------------------
+def _read_ipc_parts() -> list[str]:
+    """Read the IPC file and return its '/' -delimited parts."""
+    raw = CONFIG["paths"]["find_file"].read_text(encoding="gbk")
+    return raw.strip().split("/")
+
+
+def take_username() -> str:
+    return _read_ipc_parts()[0]
+
+
+def take_music_name() -> str:
+    return _read_ipc_parts()[1]
+
+
+def signal_finished() -> None:
+    CONFIG["paths"]["find_file"].write_text("finish", encoding="utf8")
+
+
+def append_wantfind(name: str) -> None:
+    with CONFIG["paths"]["wantfind_file"].open("a", encoding="utf8") as f:
+        f.write(name + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Cookies
+# ---------------------------------------------------------------------------
+def load_cookies(driver: webdriver.Edge) -> bool:
+    """Load saved cookies into the browser so we can skip manual login.
+
+    Returns True if cookies were loaded, False otherwise.
+    """
+    cookies_path = CONFIG["paths"]["cookies_file"]
+    if not cookies_path.exists():
+        logger.warning("Cookies file %s not found — manual login may be needed.", cookies_path)
+        return False
+
+    cookies = json.loads(cookies_path.read_text(encoding="utf8"))
+    for cookie in cookies:
+        driver.add_cookie(cookie)
+    logger.info("Loaded %d cookies from %s", len(cookies), cookies_path)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Scraper
+# ---------------------------------------------------------------------------
+class MusicScraper:
+    """Encapsulates the Selenium-based music search & download workflow."""
+
+    def __init__(self) -> None:
+        self.driver = webdriver.Edge()
+        self.wait = WebDriverWait(self.driver, 15)
+
+    # -- navigation ----------------------------------------------------------
+    def start(self) -> None:
+        logger.info("Navigating to %s", CONFIG["urls"]["home"])
+        self.driver.get(CONFIG["urls"]["home"])
+        time.sleep(3)  # let the landing page settle before cookie injection
+
+        load_cookies(self.driver)
+
+        self.driver.refresh()
+        self.driver.get(CONFIG["urls"]["search"])
+        logger.info("Ready — waiting for search queries.")
+
+    # -- search a single song -------------------------------------------------
+    def search(self, song_name: str) -> None:
+        url = CONFIG["urls"]["search"] + song_name
+        logger.info("Searching: %s", song_name)
+        self.driver.get(url)
+
+        # switch into the embedded iframe that holds search results
+        iframe = self.wait.until(
+            EC.presence_of_element_located((By.XPATH, "//iframe[@id='g_iframe']"))
+        )
+        self.driver.switch_to.frame(iframe)
+
+    # -- extract results & download -------------------------------------------
+    def scrape_and_download(self, username: str) -> int:
+        """Scrape song links and <b> titles from the current iframe,
+        download each MP3, and persist DB records.  Returns count of
+        successful downloads."""
+        links = self.driver.find_elements(By.TAG_NAME, "a")
+        bold_tags = self.driver.find_elements(By.TAG_NAME, "b")
+
+        # write song names to WantFind.txt for the Qt client
+        for b in bold_tags:
+            append_wantfind(b.text)
+
+        song_pattern = re.compile(r"https://music\.163\.com/song.*")
+
+        count = 0
+        idx = 0
+        for a in links:
+            href = a.get_attribute("href")
+            if not href:
+                continue
+            match = song_pattern.search(href)
+            if not match:
+                continue
+            if idx >= len(bold_tags):
+                break
+
+            music_id = _extract_song_id(match.group())
+            song_name = bold_tags[idx].text
+            idx += 1
+
+            # download MP3
+            mp3_url = CONFIG["urls"]["media_outer"] + music_id
+            try:
+                data = requests.get(mp3_url, headers=CONFIG["headers"], timeout=30).content
+            except requests.RequestException:
+                logger.exception("Download failed for id=%s name=%s", music_id, song_name)
+                continue
+
+            safe_name = _sanitise_filename(song_name)
+            file_path = CONFIG["paths"]["download_dir"] / f"{safe_name}.mp3"
+
+            try:
+                file_path.write_bytes(data)
+            except OSError:
+                logger.exception("Cannot write %s", file_path)
+                continue
+
+            # persist to DB
+            try:
+                insert_find_record(music_id, song_name, username)
+                insert_musicinfo_record(music_id, song_name, str(file_path))
+            except pymysql.MySQLError:
+                logger.exception("DB insert failed for %s", song_name)
+                # file already saved — continue
+            count += 1
+
+        return count
+
+    # -- cleanup --------------------------------------------------------------
+    def quit(self) -> None:
+        self.driver.quit()
+        logger.info("Browser closed.")
+
+
+# ---------------------------------------------------------------------------
+# Main loop
+# ---------------------------------------------------------------------------
+RUNNING = True
+
+
+def _handle_shutdown(signum, frame):
+    global RUNNING
+    logger.info("Received signal %d — shutting down after current iteration.", signum)
+    RUNNING = False
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
     )
-    cur=conn.cursor()
-    cur.execute(sqlcontrol,value)
-    conn.commit()
-#关闭连接与游标
-    cur.close()
-    conn.close()
-#操作数据库增加歌曲信息
 
-def takeUsername():
-    with open('C:\\Users\\33746\\Desktop\\Find.txt', 'r', encoding='gbk') as f:
-        userclicked = f.read()
-    items = userclicked.split("/")
-    print(items)  # Output: ['apple', 'orange', 'banana']
-    return items[0]
+    signal.signal(signal.SIGINT, _handle_shutdown)
+    signal.signal(signal.SIGTERM, _handle_shutdown)
 
+    # ensure download directory exists
+    CONFIG["paths"]["download_dir"].mkdir(parents=True, exist_ok=True)
 
+    scraper = MusicScraper()
+    try:
+        scraper.start()
 
-print("开始")
-driver = webdriver.Edge()
-driver.get('https://music.163.com')
-sleep(6)
-#创建一个浏览器网页实例同时访问
+        while RUNNING:
+            song = take_music_name()
+            logger.info("Requested song: %s", song)
 
-cookies = []
-# cookies=driver.get_cookies()
-# print(driver.get_cookies())
-#
-# with open("cookies.txt", "w") as fp:
-#     json.dump(cookies, fp)
-# # 当cookie失效时将该注释接触并且重新手动登录
+            scraper.search(song)
+            username = take_username()
+            downloaded = scraper.scrape_and_download(username)
 
-with open('cookies.txt', 'r', encoding='utf8') as f:
-    cookies = json.loads(f.read())
-# 将有效的cookie数据保存到文本文件中并且可以读取
-print("open cookies file")
-for i in cookies:
-    print(i)
-    driver.add_cookie(i)
-# 将保存好的cookie数据加入到驱动中，这样浏览器实例就可以跳过登录验证步骤
-
-print("cookies add end")
-driver.refresh()
-print("rebuild this demo")
-driver.get('https://music.163.com/#/search/m/?s=')
-
-while (1):
-
-    url1 = 'https://music.163.com/#/search/m/?s='
-    print("please input:")
-    musicname = input()
-    url1 = url1 + musicname
-    driver.get(url1)
-# 加入后重新刷新界面然后对指定网页重新爬取
-
-    username=takeUsername()
-
-    driver.implicitly_wait(10)
-    sleep(6)
-# 等待界面所有元素加载完成，方便后续数据爬取
-
-    iframe = driver.find_element(By.XPATH, "//iframe[@id='g_iframe']")
-    driver.switch_to.frame(iframe)
-    print("find begin")
-    a_tags = driver.find_elements(By.TAG_NAME, "a")
-    print("find finsh")
-# 先切换到指定iframe页（该界面可以起到数据保护与分割作用），然后再使用TAG_NAME方法找到所有<a <a>标签
-    b_tags = driver.find_elements(By.TAG_NAME, "b")
-
-    for b in b_tags:
-        print(b.text)
-        with open('C:\\Users\\33746\\Desktop\\WantFind.txt', 'a', encoding='utf8') as file:
-            file.write(b.text + "\n")
-# 以写入模式打开文本文件将字符串写入文本文件
-
-    idkey = 0
+            logger.info("Downloaded %d tracks for '%s'", downloaded, song)
+            signal_finished()
+    finally:
+        scraper.quit()
 
 
-    find = "https://music.163.com/song.*"
-    for a in a_tags:
-        if a.get_attribute('href'):
-            key = a.get_attribute("href")
-            res = re.search(find, key)
-            if res:
-                urltext = str(res.group())
-                print(urltext)
-                musicid=loadMusicid(urltext)
-                print(musicid)
-
-
-
-                # # 打开网页
-                # driver.get(urltext)
-                # driver.switch_to.frame(iframe)
-                # driver.implicitly_wait(10)
-                # # 获取所有的img元素
-                # images = driver.find_elements(By.TAG_NAME, 'img')
-                # # 打印出所有图片的src属性
-                # for image in images:
-                #     print(image.get_attribute('src'))
-
-                data = requests.get('http://music.163.com/song/media/outer/url?id=' + musicid).content
-                path = 'C:\\Users\\33746\\Desktop\\ServerFindMusic\\'+b_tags[idkey].text+'.mp3'
-                try:
-                    with open(path, mode='wb') as f:
-
-                        sql='insert into find_list (findlist_name,findlist_musicid,user_name) VALUES(%s,%s,%s)'
-                        value=(b_tags[idkey].text,musicid,username)
-                        addSqlquery(sql,value)
-
-                        sql1='insert into musicinfo_list (findlist_musicid,music_name,music_path) VALUES(%s,%s,%s)'
-                        value1=(musicid,b_tags[idkey].text,path)
-                        addSqlquery(sql1,value1)
-                        f.write(data)
-                        print("mp3 create")
-
-                    idkey += 1
-                except:
-                    print("mp3 create error")
-                    continue
-
-
-    print("ok")
-    with open('C:\\Users\\33746\\Desktop\\Find.txt', 'w', encoding='utf8')                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     as file:
-
-        file.write("finish")
-    sleep(6)
-    # #界面滞留两分钟方便在网页进行具体操作
-
-driver.quit()
-# #关闭浏览器
+if __name__ == "__main__":
+    main()
